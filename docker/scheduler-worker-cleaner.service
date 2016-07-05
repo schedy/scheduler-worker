@@ -4,9 +4,9 @@ Requires=scheduler-worker-init.service
 After=scheduler-worker-init.service
 
 [Service]
-ExecStart=/usr/bin/bundle exec ruby cleaner.rb
+ExecStart=/usr/bin/bundle exec ruby cleaner.rb --scheduler_uri="http://scheduler-server" --worker_name=%H
 Type=simple
-Restart=on-failure
+Restart=always
 
 WorkingDirectory=/opt/tester/scheduler-worker
 User=tester
