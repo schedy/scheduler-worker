@@ -1,0 +1,72 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    activemodel (4.2.6)
+      activesupport (= 4.2.6)
+      builder (~> 3.1)
+    activerecord (4.2.6)
+      activemodel (= 4.2.6)
+      activesupport (= 4.2.6)
+      arel (~> 6.0)
+    activesupport (4.2.6)
+      i18n (~> 0.7)
+      json (~> 1.7, >= 1.7.7)
+      minitest (~> 5.1)
+      thread_safe (~> 0.3, >= 0.3.4)
+      tzinfo (~> 1.1)
+    arel (6.0.3)
+    awesome_print (1.7.0)
+    builder (3.2.2)
+    daemons (1.2.3)
+    domain_name (0.5.20160310)
+      unf (>= 0.0.5, < 1.0.0)
+    eventmachine (1.2.0.1)
+    hana (1.3.2)
+    http-cookie (1.0.2)
+      domain_name (~> 0.5)
+    httpclient (2.8.0)
+    i18n (0.7.0)
+    json (1.8.3)
+    jsondiff (0.0.5)
+    mime-types (2.99.2)
+    minitest (5.9.0)
+    munkres (0.1.0)
+    netrc (0.11.0)
+    pg (0.18.4)
+    rake (11.1.2)
+    rest-client (1.8.0)
+      http-cookie (>= 1.0.2, < 2.0)
+      mime-types (>= 1.16, < 3.0)
+      netrc (~> 0.7)
+    seapig-client (0.0.6)
+      hana
+      jsondiff
+      websocket-eventmachine-client
+    thread_safe (0.3.5)
+    tzinfo (1.2.2)
+      thread_safe (~> 0.1)
+    unf (0.1.4)
+      unf_ext
+    unf_ext (0.0.7.2)
+    websocket (1.2.3)
+    websocket-eventmachine-base (1.2.0)
+      eventmachine (~> 1.0)
+      websocket (~> 1.0)
+      websocket-native (~> 1.0)
+    websocket-eventmachine-client (1.1.0)
+      websocket-eventmachine-base (~> 1.0)
+    websocket-native (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  activerecord
+  awesome_print
+  daemons
+  httpclient
+  munkres
+  pg
+  rake
+  rest-client
+  seapig-client

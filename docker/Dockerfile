@@ -1,16 +1,16 @@
 # ####################################################################################################
 #
+# Docker >= 1.10 is recommended!
+#
 # To build an image:
 # docker build <PATH_TO_FOLDER_OF_THIS_FILE> 
 # e.g.
 # docker build -t worker-image .
 #
-# ####################################################################################################
+# If dnf needs to use a proxy you can configure that with:
+# --build-arg=REPO_PROXY_ARG='http://my-proxy:8080'
 #
-# TODO: make use of -h, --hostname="" -  Container host name
-#         -> %H is used in estimator/executor/reporter
-#       maybe also --add-host=[]      -  Add a custom host-to-IP mapping (host:ip)
-#         -> to find the scheduler-server
+# ####################################################################################################
 #
 # To build a container:
 # docker create -v <PG_DATA_STORE>:/data/:Z -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
@@ -37,19 +37,8 @@
 # --privileged might be needed for systemd to work! We might need that in future for devices?
 # see: http://lwn.net/SubscriberLink/676831/bc927a5c0955d2b7/
 #
-# ####################################################################################################
-#
-# To start a container:
-# docker start <CONTAINER-ID_OR_NAME>
-# e.g.
-# docker start worker-container
-#
-# ####################################################################################################
-# 
-# To get a bash in the container:
-# docker exec -it <CONTAINER-ID_OR_NAME> /bin/bash
-# e.g.
-# docker exec -it worker-container /bin/bash
+# to have the journal in tmpfs you need Docker >= 1.10 with the --tmpfs option:
+# --tmpfs /run:rw,size=1g
 #
 # ####################################################################################################
 #
@@ -65,29 +54,23 @@
 #      https://bugzilla.redhat.com/show_bug.cgi?id=1247477#c1
 #
 # ####################################################################################################
-#
-# To get a start up graph from Systemd:
-# systemd-analyze dot schedule*.service postgres*.service | grep -v -E 'mount|slice|basic.target|systemd-journald.socket|shutdown.target|network.target'
-#
 
 FROM fedora:23
 
-VOLUME ["/sys/fs/cgroup"]
-VOLUME ["/tmp"]
-VOLUME ["/run"]
+ARG REPO_PROXY_ARG
 
 ENV container docker
+ENV TERM linux
 
 CMD ["/usr/lib/systemd/systemd"]
 
+ADD 30-scheduler-journal.conf /etc/systemd/journald.conf.d/
+
+ADD repo-proxy-setup.sh /usr/local/bin
+RUN REPO_PROXY=$REPO_PROXY_ARG /usr/local/bin/repo-proxy-setup.sh
+
 RUN dnf -y --setopt=tsflags=nodocs group install "C Development Tools and Libraries"
 RUN dnf -y --setopt=tsflags=nodocs install rubygem-bundler ruby-devel redhat-rpm-config postgresql-devel postgresql-server bash-completion
-
-##################################################################
-# needed for some debuging will be removed once it's working :)
-##################################################################
-RUN dnf -y install procps-ng net-tools
-##################################################################
 
 # Postgres part
 ADD postgresql-initdb.service /usr/lib/systemd/system/
@@ -95,12 +78,11 @@ ADD postgresql-initdb.sh /usr/libexec/
 ADD 30-postgres-setup.conf /etc/systemd/system/postgresql.service.d/
 RUN systemctl enable postgresql-initdb.service postgresql.service
 
-
 # Scheduler-Worker part
 RUN useradd --create-home --home-dir /opt/tester --system --user-group tester
 ADD scheduler-worker.tar.bz2 /opt/tester/scheduler-worker/
+ADD database.rb /opt/tester/scheduler-worker/config/
 RUN chown -R tester.tester /opt/tester/scheduler-worker/
-
 
 USER tester
 WORKDIR /opt/tester/scheduler-worker/
@@ -112,7 +94,6 @@ ADD scheduler-worker-init.sh /usr/libexec/
 
 ADD \
     scheduler-worker-cleaner.service \
-    scheduler-worker-estimator.service \
     scheduler-worker-executor.service \
     scheduler-worker-reporter.service \
     scheduler-worker-init.service \
@@ -120,7 +101,6 @@ ADD \
 
 RUN systemctl enable \
     scheduler-worker-cleaner.service \
-    scheduler-worker-estimator.service \
     scheduler-worker-executor.service \
     scheduler-worker-reporter.service
 
