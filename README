@@ -1,13 +1,8 @@
+bundle exec seapig-observer tasks-waiting
 
+bundle exec seapig-observer estimates:<WORKER-NAME>
 
-
-bundle exec seapig-observer http://localhost:3001 tasks-waiting
-
-
-bundle exec seapig-observer http://localhost:3001 estimates:<WORKER-NAME>
-
-
-bundle exec seapig-observer http://localhost:3001 assignments:<WORKER-NAME>
+bundle exec seapig-observer assignments:<WORKER-NAME>
 
 for i in $(seq 426 430); do curl -v -H "Content-Type: application/json" -X POST -d "{\"task_id\": $i, \"status\": \"finished\"}" http://localhost:3000/task_statuses; done
 
