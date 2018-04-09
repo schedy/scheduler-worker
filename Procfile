@@ -1,3 +1,1 @@
-estimator: bundle exec ruby estimator.rb worker
-executor: ruby executor.rb worker
-cleaner: ruby cleaner.rb
+executor: ruby executor.rb --seapig-server=http://localhost/seapig --scheduler_uri=http://localhost --worker_name=worker1

@@ -1,49 +1,46 @@
 require 'active_record'
-require 'rest_client'
-require 'awesome_print'
 require_relative './database.rb'
-
-class StatisticsArchive < ActiveRecord::Base
-  self.table_name = "statistics_archive"
-end
 
 class Statistics < ActiveRecord::Base
 
-  def self.connect
-    ActiveRecord::Base.establish_connection(DATABASE)
-  end
+	@@cache = nil
 
-  def self.disconnect
-    ActiveRecord::Base.connection.disconnect!()
-  end
+	def self.reload_cache
+		@@cache = {}
 
-  def self.measure(action=[])
-    self.transaction {
-      puts 'Measuring: '+action.to_s
-      start_time = Time.now
-      yield
-      end_time = Time.now
-      duration = (end_time-start_time)
-      StatisticsArchive.create!(action: action, duration: duration)
-      query =
-        "WITH upsert AS (UPDATE statistics SET occurence=occurence+1, average_duration = (occurence*average_duration + #{duration}) / (occurence+1) WHERE action @> ARRAY['#{action}'] RETURNING *)
-       INSERT INTO statistics (action, average_duration, occurence,created_at,updated_at )
-         SELECT ARRAY['#{action}'], #{duration},1,now(),now() WHERE NOT EXISTS (SELECT * FROM upsert)"
-      ActiveRecord::Base.connection.execute(query)
-    }
-  end
+		Statistics.all.to_a.map(&:serializable_hash).each { |action_statistic|
+			@@cache[action_statistic["action"]] = action_statistic["average_duration"]
+		}
+	end
 
-  def self.aggregate
-    self.transaction {
-      query = "WITH upsert AS (UPDATE statistics SET average_duration = sub.average_duration, occurence = sub.occurence FROM (SELECT action,AVG(duration) as average_duration,COUNT(*) as occurence FROM statistics_archive GROUP BY action) AS sub WHERE statistics.action @> sub.action RETURNING *) INSERT INTO statistics (action,average_duration,occurence,created_at,updated_at) SELECT sa.action,sa.duration,1,now(),now() FROM statistics_archive sa WHERE NOT EXISTS (SELECT * FROM upsert)"
-      ActiveRecord::Base.connection.execute(query)
-    }
-  end
+
+	def self.measure(action=[])
+		#puts 'Measuring: '+action.to_s+query.to_s
+		start_time = Time.now
+		yield
+		end_time = Time.now
+		duration = (end_time-start_time)
+		self.record(action, duration)
+	end
+
+
+	def self.record(action, duration)
+		action = action.map { |a| a.to_s } 
+		quoted_action = action.map { |element| ActiveRecord::Base.connection.quote(element) }.join(',')
+		query = "WITH upsert AS (
+		                UPDATE statistics SET occurence=occurence+1, average_duration = (occurence*average_duration + #{duration}) / (occurence+1)
+		                WHERE action @> ARRAY[#{quoted_action}] RETURNING *)
+		         INSERT INTO statistics (action, average_duration, occurence,created_at,updated_at )
+		         SELECT ARRAY[#{quoted_action}], #{duration},1,now(),now() WHERE NOT EXISTS (SELECT * FROM upsert)"
+
+		ActiveRecord::Base.connection.execute(query)
+		connection.instance_variable_get(:@connection).exec("NOTIFY statistics_changed")
+	end
+
+
+	def self.query_average(action=[],default_average)
+		Statistics.reload_cache unless @@cache
+		@@cache[action] or default_average
+	end
 
 end
-
-
-# def self.average(action)
-#   query = "SELECT average_duration FROM statistics WHERE action @> ARRAY['#{action}']"
-#   ActiveRecord::Base.connection.execute(query).first["average_duration"].to_i
-# end

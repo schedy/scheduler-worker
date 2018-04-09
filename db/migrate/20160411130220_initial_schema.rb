@@ -19,6 +19,13 @@ class InitialSchema < ActiveRecord::Migration
     t.integer  "occurence",        limit: 8
   end
 
+  create_table "statistics_archive", force: :cascade do |t|
+    t.text     "action",               default: [],              array: true
+    t.integer  "duration",   limit: 8
+    t.datetime "created_at",                        null: false
+    t.datetime "updated_at",                        null: false
+  end
+
   create_table "tasks", force: :cascade do |t|
     t.text     "status"
     t.integer  "pid"

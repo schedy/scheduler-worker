@@ -1,0 +1,14 @@
+[Unit]
+Description=Scheduler Worker Cleaner Oneshot service
+Requires=postgresql.service
+After=postgresql.service
+
+[Service]
+Type=simple
+RemainAfterExit=true
+
+ExecStart=/usr/bin/bundle exec ruby cleaner.rb --sweep true
+
+WorkingDirectory=/opt/tester/scheduler-worker/
+User=tester
+Group=tester
