@@ -21,7 +21,7 @@ Database.connect
 
 transition_started_at = Time.new
 
-Resource::RESOURCE_TYPES[step["resource"]["description"]["type"]].transition(step["resource"],step["required"],step["steps"])
+Resource::RESOURCE_TYPES[step["resource"]["description"]["type"]].transition(step["resource"],step["required"],step["steps"],{"stepfile": ARGV[3]})
 
 Statistics.record([step["required"]["type"],step["required"]["role"],step["resource"]["id"]], Time.new - transition_started_at)
 

@@ -29,7 +29,8 @@ EM.run {
 			{
 				id: resource.id,
 				type: resource.description['type'],
-				task_id: resource.task_id
+				task_id: resource.task_id,
+				estimated_release_time: (resource.estimated_release_time.to_i*1000)
 			}
 		}
 		#p status
