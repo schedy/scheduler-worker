@@ -50,13 +50,35 @@ class Task < ActiveRecord::Base
 
 		# INFO: If executor is available, grab it from SCHEDULER_WORKER_ROOT/project/executors/<executor> and execute.
 		#task_description["executor"] = [task_description["executor"]] if not task_description["executor"].kind_of? Array #FIXME: remove after interpreter update
-		execute_order = [code_directory+"/project/executors/#{task_description["executor"][0]}"].join(' ')
+		default_cpu_quota = 80
+		default_memory_limit = '3G'
+		default_block_io_weight = 500
+		# --slice=task#{id}
+		exec_cmd = [
+				'/bin/sudo',
+				'/bin/systemd-run',
+				'--scope',
+				"--unit=task#{id}",
+				'--setenv=TERM=xterm',
+				"--setenv=PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+				"--setenv=SHELL=/bin/bash",
+				"--setenv=PATH=#{ENV['PATH']}",
+				"--setenv=LD_LIBRARY_PATH=#{ENV['LD_LIBRARY_PATH']}",
+				"--property=BlockIOWeight=#{default_block_io_weight}",
+				"--property=CPUQuota=#{default_cpu_quota}%",
+				"--property=MemoryLimit=#{default_memory_limit}",
+				"--uid=#{Process.uid}",
+				"--gid=#{Process.gid}",
+				"#{code_directory}/project/executors/#{task_description['executor'][0]}"
+		]
+		exec_cmd.append(task_description['executor'][1..-1])
+
 		executor_started_at = Time.new
 		executor_pid = Bundler.with_clean_env {
-			spawn(execute_order,*task_description['executor'][1..-1], pgroup: true, chdir: ARGV[1])
+			spawn(exec_cmd.join(' '), pgroup: true, chdir: ARGV[1])
 		}
 		if executor_pid then
-			puts [execute_order,'started.'].join(' ')
+			puts [exec_cmd, 'started.'].join(' ')
 		else
 			puts "Spawn went wrong !"
 		end
@@ -77,6 +99,9 @@ class Task < ActiveRecord::Base
 			result='failed'
 		end
 		update_status(status: result)
+
+		puts "Stop task#{id}.scope"
+		`sudo /bin/systemctl stop task#{id}.scope`
 	end
 
 

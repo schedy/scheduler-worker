@@ -2,17 +2,22 @@ require_relative 'database.rb'
 require 'graphmatcher'
 
 module Enumerable
-    def independent
-	temp = self.clone
-	all_resources = self.map { |el| el.transpose[0] }.flatten.uniq
-	self.each { |val|
-	    (all_resources & val.transpose[0]).length == val.transpose[0].length ? (all_resources -= val.transpose[0]) : (temp.delete(val))
-	}
-	temp
-    end
+	def independent
+		temp = self.clone
+		all_resources = self.map { |el| el.transpose[0] }.flatten.uniq
+		self.each { |val|
+			(all_resources & val.transpose[0]).length == val.transpose[0].length ? (all_resources -= val.transpose[0]) : (temp.delete(val))
+		}
+		temp
+	end
 end
 
 class Resource < ActiveRecord::Base
+
+
+	def self.exclusive?
+		true
+	end
 
 	def self.nodes(description)
 		[description]+(description["children"] or []).map { |child| nodes(child) }.flatten
@@ -26,7 +31,7 @@ class Resource < ActiveRecord::Base
 				if (resource[:description]["type"] != requirement["type"] ) or (not RESOURCE_TYPES[resource[:description]["type"]]) or not res = RESOURCE_TYPES[resource[:description]["type"]].estimate(resource, requirement)
 					costs[resource_index][requirement_index] = 360000
 				else
-					costs[resource_index][requirement_index] =	res[:transition_duration]
+					costs[resource_index][requirement_index] = res[:transition_duration]
 				end
 			}
 		}
@@ -35,9 +40,10 @@ class Resource < ActiveRecord::Base
 	end
 
 	#unsuitable method name.
-	def self.free(estimated_release_time:, ids: nil)
+	def self.free(estimated_release_time:, exclusive_ids: nil)
 
-		resources = Resource.where("task_id IS NULL OR estimated_release_time <= #{estimated_release_time}")
+		shared_resource_types = RESOURCE_TYPES.to_a.select { |klass_name, klass| not klass.exclusive? }.map { |klass_name, klass| klass_name }
+		resources = Resource.where("task_id IS NULL OR estimated_release_time <= #{estimated_release_time} OR description ->> 'type' IN (?)", shared_resource_types)
 
 		if not ids.nil?
 			resources = resources.where("id IN (?)",ids)
@@ -96,13 +102,14 @@ class Resource < ActiveRecord::Base
 		graph = if not available_resources.empty?
 					available_resources.map { |res|
 						[
-							res[:children_ids].map {|ci| available_resources.index{ |t| t[:id] == ci.to_i } },
+							res[:children_ids].map {|ci| available_resources.index{ |t| t[:id] == ci.to_i } }.compact,
 							[res[:description]["type"]]
 						]
 					}.transpose
 				else
 					[ [],[] ]
 				end
+
 
 		query = task_requirements.map { |req| [req["children"],[req["type"]],[req["role"]]]}.transpose
 
@@ -116,7 +123,7 @@ class Resource < ActiveRecord::Base
 			}
 		)
 
-		plans = @graphmatcher.find_matches
+		plans = @graphmatcher.find_matches.select { |plan| plan.inject(0) { |max, (node,cost)| [max, cost].max } < 360000 }
 
 		return nil if plans.empty?
 
@@ -135,7 +142,7 @@ class Resource < ActiveRecord::Base
 			:transition_duration => total_cost,
 			:actors => actors,
 			:steps => steps,
-			:alternatives => sorted_plans.map { |plan| plan.transpose[0].map { |index| available_resources[index][:id] }
+			:alternatives => sorted_plans.map { |plan| plan.transpose[0].select { |index| RESOURCE_TYPES[available_resources[index][:description]["type"]].exclusive? }.map { |index| available_resources[index][:id] }
 			}
 		}
 

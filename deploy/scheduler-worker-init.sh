@@ -4,6 +4,19 @@
 DBM_OK=5
 CU_OK=5
 CDB_OK=5
+RESOURCE_SQL="/opt/tester/scheduler-worker/resources.sql"
+
+function upsert_resources()
+{
+    if [ -f ${RESOURCE_SQL} ]; then
+        echo "Found '${RESOURCE_SQL}', run it with psql..."
+        set -e
+        su -c "/usr/bin/psql --echo-queries --file=${RESOURCE_SQL} scheduler_worker" tester
+        set +e
+    else
+        echo "'${RESOURCE_SQL}' does not exists..."
+    fi
+}
 
 
 pushd /opt/tester/scheduler-worker/
@@ -12,7 +25,8 @@ DBM_OK=$?
 popd
 
 if [ $DBM_OK = 0 ]; then
-    echo "All fine, skipping..."
+    echo "All fine so far, lets check for a '${RESOURCE_SQL}' file..."
+    upsert_resources
     exit $DBM_OK
 else
     HAS_ROLE=$(su -c "/usr/bin/psql -A -t -c \"select count(*) from pg_user where usename='tester'\"" postgres 2>/dev/null || echo "42")
@@ -44,10 +58,11 @@ else
             popd
 
             if [ $DBM_OK = 0 ]; then
+                upsert_resources
                 echo "all fine now, scheduler can start..."
                 exit 0
             else
-                echo "db:migrate still fails, giving up!" 
+                echo "db:migrate still fails, giving up!"
                 exit $DBM_OK
             fi
         else

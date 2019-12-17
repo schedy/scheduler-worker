@@ -64,6 +64,7 @@ GEM
     websocket-eventmachine-client (1.2.0)
       websocket-eventmachine-base (~> 1.0)
     websocket-native (1.0.0)
+    xmlrpc (0.3.0)
 
 PLATFORMS
   ruby
@@ -80,6 +81,7 @@ DEPENDENCIES
   rest-client
   seapig-client-ruby
   typhoeus
+  xmlrpc
 
 BUNDLED WITH
    1.13.7

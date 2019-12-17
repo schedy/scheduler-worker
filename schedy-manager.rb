@@ -72,8 +72,8 @@ EM.run {
 				req_obj["tasks"].each { |task_id,task|
 
 					if estimated_plan
+						#duration-key: test case name and environment name.
 						execution_duration = Statistics.query_average(task["duration-key"],60)
-
 						plan_key = if observation_time != current_time then observation_time else "now" end
 						estimates["estimates"][task_id.to_s] ||= {}
 						estimates["estimates"][task_id.to_s][plan_key] = [
@@ -97,12 +97,11 @@ EM.run {
 		assignments_last_processed_version = assignments.version["Postgres::Task:assigned:"+WORKER_NAME]
 		reestimate_queued_mutex.synchronize { EM.next_tick(&reestimate) if (reestimate_queued_for << "resuming-delayed-reestimation").size == 1 } if reestimate_delayed
 
-		puts "Got new assignments "+assignments["tasks"].map { |task| task["id"] }.inspect #+" "+assignments.version.inspect
+		puts "Got new assignments "+assignments["tasks"].map { |task| task["id"] }.inspect
 
 		assignments["tasks"].each { |task_description|
 
 			task_id = task_description["id"].to_s
-			#puts assignments
 
 			# INFO: Start an assignment procedure, if it is not assigned by anyone else yet.
 			puts "\tprocessing task#"+ task_id
@@ -117,7 +116,7 @@ EM.run {
 			new_task = Task.create!(id: task_id, status: "accepted")
 
 			#INFO: Perform estimate
-			plan = Resource.estimate(Resource.free(estimated_release_time: 'NULL',ids: task_description["resources"]), task_description['requirements'])
+			plan = Resource.estimate(Resource.free(estimated_release_time: 'NULL',exclusive_ids: task_description["resources"]), task_description['requirements'])
 
 			if plan == nil
 				new_task.destroy!
@@ -131,7 +130,9 @@ EM.run {
 
 				estimated_release_time = transition_duration + execution_duration + Time.now.to_i
 
-				if not lock_response=Resource.lock(task_id,plan[:actors])
+				exclusive_actors = plan[:actors].select { |role,resource| Resource::RESOURCE_TYPES[resource[:description]["type"]].exclusive? }
+
+				if not lock_response = Resource.lock(task_id,exclusive_actors)
 					new_task.destroy!
 					Task.update_status(task_id: task_id, status: "waiting")
 					puts "Task ID: %8s - Resource lock failed. @ %s - %s"%[task_id,Time.now,lock_response]

@@ -1,0 +1,236 @@
+= Scheduler Worker (aka Teststation or ts)
+:toc:
+
+:sectnums:
+
+== Setup
+Basis for this setup is a CentOS 7 minimal installation.
+
+The minimal installation misses some useful packages, and depending on the
+install medium not all the latest packages are installed:
+[source,bash]
+----
+yum install firewalld psmisc usbutils bash-completion procps-ng net-tools vim\
+   jq bzip2
+yum update
+reboot
+----
+
+Clone +scheduler-worker+ to +/opt/tester/scheduler-worker/+:
+[source,bash]
+----
+mkdir -p /opt/tester/
+cd /opt/tester/
+git clone https://github.com/schedy/scheduler-worker.git
+----
+
+Clone the project part to +/opt/tester/scheduler-worker/project+:
+[source,bash]
+----
+cd /opt/tester/scheduler-worker/
+# e.g the demo project
+git clone https://github.com/schedy/scheduler-demo-project.git project
+----
+
+Postgres >=9.5 is required
+[source,bash]
+----
+yum install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+yum install https://download.postgresql.org/pub/repos/yum/reporpms/non-free/EL-7-x86_64/pgdg-redhat-repo-nonfree-latest.noarch.rpm
+yum install postgresql95
+
+systemctl enable postgresql95.service
+systemctl start postgresql95.service
+----
+
+Scheduler worker needs space for the test packages and test artifacts:
+[source,bash]
+----
+mkdir -p /data/scheduler-storage/{rpms,tasks,unpacked}
+chown -R tester.tester /data/scheduler-storage
+cd /opt/tester/scheduler-worker
+ln -s /data/scheduler-storage storage
+----
+
+Scheduler worker needs the following services to run:
+[source,bash]
+----
+cp /opt/tester/scheduler-worker/deploy/scheduler-worker-init.service /etc/systemd/system/
+cp /opt/tester/scheduler-worker/deploy/scheduler-worker-manager.service /etc/systemd/system/
+cp /opt/tester/scheduler-worker/deploy/scheduler-worker-reporter.service /etc/systemd/system/
+cp /opt/tester/scheduler-worker/deploy/scheduler-worker-init.sh /usr/libexec/
+
+systemctl daemon-reload
+
+systemctl enable scheduler-worker-manager.service \
+  scheduler-worker-reporter.service
+systemctl start scheduler-worker-manager.service \
+  scheduler-worker-reporter.service
+----
+
+Resources now can be added to the database, the +description+ depends on the
+resource type:
+[source,bash]
+----
+su -c 'psql scheduler_worker ' tester
+INSERT INTO resources(task_id,created_at,updated_at,description)
+       VALUES (null,now(),now(),'{"type": "DUT"}');
+----
+
+== Running
+.Systemd start up dependencies
+[graphviz]
+---------------------------------------------------------------------
+digraph systemd {
+  "scheduler-worker-manager.service"->"scheduler-worker-init.service" [color="green"];
+  "scheduler-worker-manager.service"->"scheduler-worker-init.service" [color="black"];
+  "scheduler-worker-reporter.service"->"scheduler-worker-init.service" [color="green"];
+  "scheduler-worker-reporter.service"->"scheduler-worker-init.service" [color="black"];
+  "scheduler-worker-init.service"->"postgresql95.service" [color="green"];
+  "scheduler-worker-init.service"->"postgresql95.service" [color="black"];
+}
+---------------------------------------------------------------------
+
+.Color legend
+[format="csv",width="20%",cols="2"]
+[frame="topbot",grid="none",options="header"]
+|=============
+Color,Relation
+black,Requires
+green,After
+|=============
+
+[NOTE]
+==============================================================================
+----
+systemd-analyze dot scheduler*.service postgres*.service 2>/dev/null \
+| grep -E 'mount|multi-user|target|slice|socket|002|003|004|005|006' -v \
+| sed -e 's/001/00?/' -e 's/\t/  /'
+----
+==============================================================================
+
+=== scheduler-worker-manager.service
+Starts the Executor, this process is responsible to estimate tasks,
+transition resources and execute tasks.
+
+=== scheduler-worker-reporter.service
+Starts the Reporter, it reports back to the server the status of the
+resources.
+
+=== postgresql95.service
+Starts PostgreSQL.
+
+=== scheduler-worker-init.service
+This is started at the beginning to ensure the database is set up.
+See +/usr/libexec/scheduler-worker-init.sh+ for details.
+It exits when finished and does not need to run during normal operation.
+
+=== Important paths
+ * +/opt/tester/scheduler-worker/+ -> open source part of worker
+ * +/opt/tester/scheduler-worker/project+ -> project part
+ * +/opt/tester/scheduler-worker/storage+ symlink to: /data/scheduler-storage
+ * +/data/scheduler-storage/tasks/+ -> task folders, contains for each testrun
+   a folder containing the artifacts
+ * +/data/scheduler-storage/rpms/+ -> downloaded rpms
+ * +/data/scheduler-storage/unpacked/+ -> unpacked rpms
+
+== Trouble Shoot
+[qanda]
+.Q&A
+No tasks are picked up, what can I do?::
+    * Check that +scheduler-worker-executor.service+ is running
+    * Check that the required resource is available and not locked
+    * Check that the required resource has the right stage if set
+    * *On Scheduler server* check that +scheduler-seapig-server.service+,
+      +scheduler-seapig-worker@proc-00?.service+ and
+      +scheduler-dealer.service+ are working
+
+Where are the logfiles?::
+    All services are started with systemd, so use +journalctl+ and
+    it's power to show the logs of different services.
+
+A task failed, but there are no artifacts uploaded, where can I find them?::
+    All files related to a task can be found in
+    +/opt/tester/scheduler-worker/storage/tasks/<TASK_ID>+, e.g.:
+----
+[root@ts002 5752644]# pwd; ls -1
+/opt/tester/scheduler-worker/storage/tasks/5752644
+device_configuration.robot
+log.html
+output.xml
+report.html
+resource_ci.robot
+schedy-task.output
+schedy-transition-0
+schedy-transition-0.output
+schedy-transition-1
+schedy-transition-1.output
+schedy-transition-2
+schedy-transition-2.output
+schedy-transition-3
+schedy-transition-3.output
+task.json
+usr
+xunit.xml
+[root@ts002 5752644]#
+----
+
+== Useful commands
+[[anchor-003]]
+
+=== Change the stage of a resource
+
+Resource stages can be changed with the SQL command below.
+
+[source,bash]
+----
+UPDATE resources SET description = jsonb_set(description, '{stage}', '"release"')
+    WHERE id IN ($target_resource_id);
+----
+
+=== Change the status of a task
+The status of a task can be changed according to the following flow. This might
+be useful when due to a network issue the status could not be set.
+
+.Status flow
+[graphviz]
+---------------------------------------------------------------------
+digraph systemd {
+  "waiting"->"assigned";
+  "assigned"->"waiting";
+  "waiting"->"paused";
+  "paused"->"waiting";
+  "waiting"->"canceled";
+  "assigned"->"accepted";
+  "accepted"->"transition";
+  "transition"->"started";
+  "transition"->"crashed";
+  "started"->"failed";
+  "started"->"finished";
+}
+---------------------------------------------------------------------
+
+==== Set the status of a task via API (curl)
+[source,bash]
+----
+curl -v -H "Content-Type: application/json" -d \
+  "{\"task_id\": $i, \"status\": \"<STATUS-NAME>\"}" \
+  http://<SCHEULER-HOST>/tasks/<TASK-ID>/status
+----
+
+==== Set status from teststation with file upload
+[source,bash]
+----
+$ cd /opt/tester/scheduler-worker/
+ bundle exec ruby cleaner.rb -t <TASK-ID> \
+  -r <STATUS> -s passed
+----
+
+==== Set status of a whole execution
+[source,bash]
+----
+curl -v --data "options[from]=<CURRENT-STATUS>&options[to]=<NEW-STATUS>" \
+  "http://<SCHEULER-HOST>/executions/<TASK-ID>/force_status"
+----
+
+// vim: set syntax=asciidoc spell spelllang=en_us:
