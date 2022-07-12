@@ -1,7 +1,7 @@
 source 'https://rubygems.org'
 
 gem 'rest-client'
-gem 'activerecord', '5.0.6'
+gem 'activerecord', '7.0.3.1'
 gem 'seapig-client-ruby'
 
 gem 'pg'
